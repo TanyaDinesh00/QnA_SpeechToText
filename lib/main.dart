@@ -1,8 +1,12 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:reportqanda/questions.dart';
+import 'package:reportqanda/result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:rflutter_alert/rflutter_alert.dart';
 
 void main() {
   runApp(MyApp());
@@ -12,6 +16,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Q n A',
       home: HomeScreen(),
     );
@@ -29,8 +34,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _speechRecognitionAvailable = false;
   String _oldRecognizedText = ' ';
   String _recognizedText = ' ';
+  String _answers = '';
   String selectedLang;
   TextEditingController inputController = TextEditingController();
+
+  Questions questions = Questions();
 
   @override
   void initState() {
@@ -41,7 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> activateSpeechRecognizer() async {
     print('Initiate Speech Recognizer');
     _speech = SpeechToText();
-//    _speech.statusListener(() {});
     _speechRecognitionAvailable = await _speech.initialize(
         onError: errorHandler, onStatus: onSpeechAvailability);
     var currentLocale = await _speech.systemLocale();
@@ -65,56 +72,62 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
+                  flex: 1,
+                  child: Container(
+                    child: Center(
+                      child: Text(
+                        questions.getQuestionText(),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 25.0,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
                   child: Container(
                     padding: const EdgeInsets.all(8.0),
                     color: Colors.grey.shade200,
-//                        child: Text(_oldRecognizedText + _recognizedText),
                     child: TextField(
                       keyboardType: TextInputType.multiline,
                       controller: inputController,
                       maxLines: 8,
                       decoration: InputDecoration(
-                        hintText: 'Type or Speak',
+                        hintText: 'Type or Press Speak',
                       ),
-//                      onEditingComplete: (){},
                     ),
                   ),
                 ),
-//                _buildButton(
-//                  onPressed: _speechRecognitionAvailable && !_isListening
-//                      ? () => start()
-//                      : null,
-//                  label:
-//                      _isListening ? 'Listening...' : 'Listen ($selectedLang)',
-//                ),
-////                  _buildButton(
-////                    onPressed: _isListening ? () => cancel() : null,
-////                    label: 'Cancel',
-////                  ),
-//                _buildButton(
-//                  onPressed: _isListening ? () => stop() : null,
-//                  label: 'Stop',
-//                ),
-                !_isListening
-                    ? _buildButton(
-                        onPressed: _speechRecognitionAvailable && !_isListening
-                            ? () => start()
-                            : null,
-                        label: _isListening
-                            ? 'Listening...'
-                            : 'Speak ($selectedLang)',
-                      )
-                    : _buildButton(
-                        onPressed: _isListening ? () => stop() : null,
-                        label: 'Stop',
-                      ),
-//                _buildButton(
-//                  onPressed: () {
-//                    print('Speech Recognition Available?' +
-//                        _speechRecognitionAvailable.toString());
-//                  },
-//                  label: 'Speech Recognition Available?',
-//                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <Widget>[
+                    !_isListening
+                        ? _buildButton(
+                            onPressed:
+                                _speechRecognitionAvailable && !_isListening
+                                    ? () => start()
+                                    : null,
+                            label: _isListening
+                                ? 'Listening...'
+                                : 'Speak ($selectedLang)',
+                          )
+                        : _buildButton(
+                            onPressed: _isListening ? () => stop() : null,
+                            label: 'Stop',
+                          ),
+                    _buildButton(
+                      onPressed: _submit,
+                      label: 'Submit',
+                    ),
+                    _buildButton(
+                      onPressed: _skip,
+                      label: 'Skip',
+                    ),
+                  ],
+                ),
               ],
             ),
           )),
@@ -133,6 +146,73 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ));
   }
+
+  void _submit() {
+    cancel();
+    stop();
+    _oldRecognizedText = inputController.text;
+    setState(() {
+      _answers += 'Question: ' +
+          questions.getQuestionText() +
+          '\nAnswer: ' +
+          _oldRecognizedText +
+          '\n\n';
+      _oldRecognizedText = '';
+      _recognizedText = '';
+    });
+    inputController.value = TextEditingValue(
+      text: _oldRecognizedText + _recognizedText,
+      selection: TextSelection.fromPosition(
+        TextPosition(offset: (_oldRecognizedText + _recognizedText).length),
+      ),
+    );
+    print(_answers);
+    if (questions.isLast()) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) {
+        return ResultScreen(
+          resultText: _answers,
+        );
+      })).then((value) {
+        print("Back to previous Page!");
+        reset();
+      });
+    } else {
+      setState(() {
+        questions.nextQuestion();
+      });
+    }
+  }
+
+  void _skip() {
+    setState(() {
+      _oldRecognizedText = '';
+      _recognizedText = '';
+      inputController.text = '';
+    });
+    if (questions.isLast()) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) {
+        return ResultScreen(
+          resultText: _answers,
+        );
+      })).then((value) {
+        print("Back to previous Page!");
+        reset();
+      });
+    } else {
+      setState(() {
+        questions.nextQuestion();
+      });
+    }
+  }
+
+  void reset() {
+    setState(() {
+      questions.reset();
+      _answers = _recognizedText = _oldRecognizedText = "";
+    });
+  }
+
+  // [Speech recognition Functions are below this comment]
 
   void onRecognitionResult(SpeechRecognitionResult result) {
     setState(() => _recognizedText = result.recognizedWords);
@@ -158,18 +238,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _speechRecognitionAvailable = _speech.isAvailable;
       _isListening = _speech.isListening;
     });
-//    print('Status Changed : ' + status);
-//    if (status == 'notListening') {
-//      print('Recognition Stopped');
-//      setState(() {
-//        _oldRecognizedText += _recognizedText;
-//        _recognizedText = '';
-//        print(_oldRecognizedText + '===>' + _recognizedText);
-//      });
-//    }
   }
 
   void errorHandler(SpeechRecognitionError error) {
+    if (error.errorMsg != 'error_speech_timeout' &&
+        error.errorMsg != 'error_no_match') {
+      Alert(context: context, title: "Error", desc: error.toString()).show();
+    }
     print(error.errorMsg);
     stop();
   }
@@ -192,4 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _speech.stop();
     setState(() => _isListening = false);
   }
+
+  //Others
+
 }
